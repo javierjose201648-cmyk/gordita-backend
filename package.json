@@ -14,6 +14,7 @@
     "migrate:promos": "ts-node src/database/migratePromos.ts",
     "seed:promos": "ts-node src/database/promoSeeds.ts",
     "migrate:orden-fix": "ts-node src/database/migrateOrdenFix.ts",
+    "seed:precios": "ts-node src/database/seedPreciosUpdate.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
