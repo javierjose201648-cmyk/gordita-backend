@@ -1,5 +1,6 @@
 import pool from '../config/database';
 import { PromocionModel, ItemOrdenPool, RefrescoOrdenPool } from './promocion.model';
+import { RefriModel } from './refri.model';
 
 export interface Orden {
   id: number;
@@ -184,6 +185,11 @@ export class OrdenModel {
 
         totalSinPromo += subtotalRef;
         refrescosPool.push({ tamaño: refrescoTamaño, precio_unitario: refrescoPrecio, cantidad: refresco.cantidad });
+      }
+
+      // ── Descontar del inventario del refri por categoría ──
+      if (ordenData.refrescos && ordenData.refrescos.length > 0) {
+        await RefriModel.decreaseForSale(client, ordenData.refrescos);
       }
 
       // ── Aplicar promoción (solo si el cliente la pide explícitamente) ──

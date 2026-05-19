@@ -11,6 +11,8 @@ import authRoutes       from './routes/auth.routes';
 import usuarioRoutes    from './routes/usuario.routes';
 import promocionRoutes         from './routes/promocion.routes';
 import categoriaRefrescoRoutes from './routes/categoriaRefresco.routes';
+import gastoRoutes             from './routes/gasto.routes';
+import refriRoutes             from './routes/refri.routes';
 
 dotenv.config();
 
@@ -61,6 +63,8 @@ app.use('/api/extras',     extraRoutes);
 app.use('/api/refrescos',  refrescoRoutes);
 app.use('/api/promociones',          promocionRoutes);
 app.use('/api/categorias-refresco',  categoriaRefrescoRoutes);
+app.use('/api/gastos',     gastoRoutes);
+app.use('/api/refri',      refriRoutes);
 app.use('/api/ordenes',    ordenRoutes);
 
 // ── Local dev: start HTTP server

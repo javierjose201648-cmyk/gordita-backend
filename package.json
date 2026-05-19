@@ -17,6 +17,9 @@
     "seed:precios": "ts-node src/database/seedPreciosUpdate.ts",
     "migrate:refresco-categoria": "ts-node src/database/migrateRefrescoCategoria.ts",
     "migrate:categoria-refresco": "ts-node src/database/migrateCategoriaRefresco.ts",
+    "migrate:guisado-fk": "ts-node src/database/migrateGuisadoFk.ts",
+    "migrate:gastos": "ts-node src/database/migrateGastos.ts",
+    "migrate:refri": "ts-node src/database/migrateRefri.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

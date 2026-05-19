@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { CategoriaRefrescoModel } from '../models/categoriaRefresco.model';
+import { RefriModel } from '../models/refri.model';
 
 export class CategoriaRefrescoController {
   static async getAll(_req: Request, res: Response) {
@@ -17,6 +18,8 @@ export class CategoriaRefrescoController {
     }
     try {
       const cat = await CategoriaRefrescoModel.create(nombre);
+      // Auto-create refri inventory row for the new category
+      await RefriModel.ensureCategory(cat.id);
       res.status(201).json(cat);
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : '';
