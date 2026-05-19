@@ -46,23 +46,22 @@ export class PromocionController {
 
   static async create(req: Request, res: Response) {
     try {
-      const { nombre, descripcion, cantidad_minima, descuento_porcentaje, precio_especial, activa, fecha_inicio, fecha_fin } = req.body;
+      const { nombre, descripcion, precio_fijo, activa, fecha_inicio, fecha_fin, condiciones } = req.body;
 
-      if (!nombre || !cantidad_minima) {
-        return res.status(400).json({ 
-          message: 'Nombre y cantidad mínima son requeridos' 
+      if (!nombre || !precio_fijo) {
+        return res.status(400).json({
+          message: 'Nombre y precio_fijo son requeridos'
         });
       }
 
       const promocion = await PromocionModel.create({
         nombre,
         descripcion,
-        cantidad_minima,
-        descuento_porcentaje,
-        precio_especial,
+        precio_fijo,
         activa: activa ?? true,
         fecha_inicio,
-        fecha_fin
+        fecha_fin,
+        condiciones: condiciones ?? []
       });
 
       res.status(201).json(promocion);
