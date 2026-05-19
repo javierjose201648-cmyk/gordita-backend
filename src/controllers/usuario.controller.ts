@@ -1,0 +1,94 @@
+import { Request, Response } from 'express';
+import { UsuarioModel } from '../models/usuario.model';
+
+export class UsuarioController {
+  static async getAll(req: Request, res: Response) {
+    try {
+      const usuarios = await UsuarioModel.getAll();
+      res.json(usuarios);
+    } catch (error) {
+      res.status(500).json({ 
+        message: 'Error al obtener usuarios',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  }
+
+  static async getById(req: Request, res: Response) {
+    try {
+      const id = parseInt(req.params.id as string);
+      const usuario = await UsuarioModel.getById(id);
+      
+      if (!usuario) {
+        return res.status(404).json({ message: 'Usuario no encontrado' });
+      }
+      
+      res.json(usuario);
+    } catch (error) {
+      res.status(500).json({ 
+        message: 'Error al obtener usuario',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  }
+
+  static async update(req: Request, res: Response) {
+    try {
+      const id = parseInt(req.params.id as string);
+      const usuario = await UsuarioModel.update(id, req.body);
+
+      if (!usuario) {
+        return res.status(404).json({ message: 'Usuario no encontrado' });
+      }
+
+      res.json(usuario);
+    } catch (error) {
+      res.status(500).json({ 
+        message: 'Error al actualizar usuario',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  }
+
+  static async updatePassword(req: Request, res: Response) {
+    try {
+      const id = parseInt(req.params.id as string);
+      const { newPassword } = req.body;
+
+      if (!newPassword) {
+        return res.status(400).json({ message: 'Nueva contraseña es requerida' });
+      }
+
+      const updated = await UsuarioModel.updatePassword(id, newPassword);
+
+      if (!updated) {
+        return res.status(404).json({ message: 'Usuario no encontrado' });
+      }
+
+      res.json({ message: 'Contraseña actualizada correctamente' });
+    } catch (error) {
+      res.status(500).json({ 
+        message: 'Error al actualizar contraseña',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  }
+
+  static async delete(req: Request, res: Response) {
+    try {
+      const id = parseInt(req.params.id as string);
+      const deleted = await UsuarioModel.delete(id);
+
+      if (!deleted) {
+        return res.status(404).json({ message: 'Usuario no encontrado' });
+      }
+
+      res.json({ message: 'Usuario eliminado correctamente' });
+    } catch (error) {
+      res.status(500).json({ 
+        message: 'Error al eliminar usuario',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  }
+}
