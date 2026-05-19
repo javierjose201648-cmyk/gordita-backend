@@ -158,124 +158,49 @@ export class PromocionModel {
   }
 
   /**
-   * Evalúa todas las promociones activas contra los items de una orden.
-   * Retorna los descuentos a aplicar y las promociones que aplican.
+   * Valida si los items de una orden cumplen TODAS las condiciones de una promoción.
+   * Retorna un array de mensajes de error; array vacío = condiciones cumplidas.
    *
-   * Lógica por condición:
-   *   gorditas_minimas  → necesita N gorditas en total
-   *   gorditas_masa     → necesita N gorditas del tipo_masa_nombre indicado
-   *   refresco_tamaño   → necesita N refrescos del tamaño indicado
-   *
-   * Cada promoción puede aplicarse múltiples veces si hay suficientes items.
-   * El descuento por aplicación = (precio regular de items cubiertos) - precio_fijo.
+   * Úsalo ANTES de crear la orden para dar feedback al usuario.
    */
-  static async evaluarPromociones(
-    items: ItemOrdenPool[],
-    refrescos: RefrescoOrdenPool[]
-  ): Promise<{ descuentoTotal: number; promocionesAplicadas: ResultadoPromocion[] }> {
-    const promosActivas = await PromocionModel.getActivas();
-    const promocionesAplicadas: ResultadoPromocion[] = [];
-    let descuentoTotal = 0;
-
-    for (const promo of promosActivas) {
-      if (!promo.precio_fijo || promo.condiciones.length === 0) continue;
-
-      const { vecesAplicada, descuento } = PromocionModel._calcularAplicacion(
-        promo,
-        items,
-        refrescos
-      );
-
-      if (vecesAplicada > 0 && descuento > 0) {
-        promocionesAplicadas.push({
-          promocion_id: promo.id,
-          nombre: promo.nombre,
-          veces_aplicada: vecesAplicada,
-          descuento
-        });
-        descuentoTotal += descuento;
-      }
-    }
-
-    return { descuentoTotal, promocionesAplicadas };
-  }
-
-  private static _calcularAplicacion(
+  static validarCondiciones(
     promo: PromocionConCondiciones,
     items: ItemOrdenPool[],
     refrescos: RefrescoOrdenPool[]
-  ): { vecesAplicada: number; descuento: number } {
-    let vecesAplicada = Infinity;
-
-    // How many times can each condition be satisfied?
-    for (const cond of promo.condiciones) {
-      let disponible = 0;
-
-      if (cond.tipo === 'gorditas_minimas') {
-        disponible = items.reduce((sum, i) => sum + i.cantidad, 0);
-      } else if (cond.tipo === 'gorditas_masa') {
-        disponible = items
-          .filter(i => i.masa_nombre === cond.tipo_masa_nombre)
-          .reduce((sum, i) => sum + i.cantidad, 0);
-      } else if (cond.tipo === 'refresco_tamaño') {
-        disponible = refrescos
-          .filter(r => r.tamaño === cond.tamaño_refresco)
-          .reduce((sum, r) => sum + r.cantidad, 0);
-      }
-
-      vecesAplicada = Math.min(vecesAplicada, Math.floor(disponible / cond.cantidad));
-    }
-
-    if (vecesAplicada === Infinity || vecesAplicada === 0) {
-      return { vecesAplicada: 0, descuento: 0 };
-    }
-
-    // Calculate regular price of covered items (cheapest first = conservative estimate)
-    let precioRegularTotal = 0;
+  ): string[] {
+    const errores: string[] = [];
 
     for (const cond of promo.condiciones) {
-      const necesitados = cond.cantidad * vecesAplicada;
-
       if (cond.tipo === 'gorditas_minimas') {
-        precioRegularTotal += PromocionModel._sumarMasBaratos(
-          items.map(i => ({ precio: i.precio_unitario, cantidad: i.cantidad })),
-          necesitados
-        );
+        const total = items.reduce((s, i) => s + i.cantidad, 0);
+        if (total < cond.cantidad) {
+          errores.push(
+            `Se necesitan al menos ${cond.cantidad} gorditas (tienes ${total})`
+          );
+        }
       } else if (cond.tipo === 'gorditas_masa') {
-        const filtrados = items
+        const count = items
           .filter(i => i.masa_nombre === cond.tipo_masa_nombre)
-          .map(i => ({ precio: i.precio_unitario, cantidad: i.cantidad }));
-        precioRegularTotal += PromocionModel._sumarMasBaratos(filtrados, necesitados);
+          .reduce((s, i) => s + i.cantidad, 0);
+        if (count < cond.cantidad) {
+          errores.push(
+            `Se necesitan ${cond.cantidad} gorditas de ${cond.tipo_masa_nombre} (tienes ${count})`
+          );
+        }
       } else if (cond.tipo === 'refresco_tamaño') {
-        const filtrados = refrescos
+        const count = refrescos
           .filter(r => r.tamaño === cond.tamaño_refresco)
-          .map(r => ({ precio: r.precio_unitario, cantidad: r.cantidad }));
-        precioRegularTotal += PromocionModel._sumarMasBaratos(filtrados, necesitados);
+          .reduce((s, r) => s + r.cantidad, 0);
+        if (count < cond.cantidad) {
+          errores.push(
+            `Se necesita ${cond.cantidad} refresco de ${cond.tamaño_refresco} (tienes ${count})`
+          );
+        }
       }
     }
 
-    const precioFijo = parseFloat(promo.precio_fijo!.toString()) * vecesAplicada;
-    const descuento = Math.max(0, precioRegularTotal - precioFijo);
-
-    return { vecesAplicada, descuento };
+    return errores;
   }
 
-  // Takes cheapest N units from a pool, returns total price
-  private static _sumarMasBaratos(
-    pool: { precio: number; cantidad: number }[],
-    necesitados: number
-  ): number {
-    const sorted = [...pool].sort((a, b) => a.precio - b.precio);
-    let total = 0;
-    let remaining = necesitados;
-
-    for (const item of sorted) {
-      if (remaining <= 0) break;
-      const take = Math.min(item.cantidad, remaining);
-      total += take * item.precio;
-      remaining -= take;
-    }
-
-    return total;
-  }
 }
+

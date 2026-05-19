@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { OrdenModel } from '../models/orden.model';
+import { OrdenModel, PromoCondicionError } from '../models/orden.model';
 
 export class OrdenController {
   static async getAll(req: Request, res: Response) {
@@ -37,9 +37,16 @@ export class OrdenController {
       const orden = await OrdenModel.create(req.body);
       res.status(201).json(orden);
     } catch (error) {
-      res.status(500).json({ 
+      // Promo validation error → 400 with the list of unmet conditions
+      if (error instanceof PromoCondicionError) {
+        return res.status(400).json({
+          message: 'No se cumplen las condiciones de la promoción',
+          errores: error.errores,
+        });
+      }
+      res.status(500).json({
         message: 'Error al crear orden',
-        error: error instanceof Error ? error.message : 'Error desconocido'
+        error: error instanceof Error ? error.message : 'Error desconocido',
       });
     }
   }
