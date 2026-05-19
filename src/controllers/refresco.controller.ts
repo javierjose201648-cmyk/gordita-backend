@@ -46,11 +46,11 @@ export class RefrescoController {
 
   static async create(req: Request, res: Response) {
     try {
-      const { nombre, sabor, tamaño, precio, disponible } = req.body;
+      const { nombre, sabor, tamaño, precio, disponible, categoria_id } = req.body;
 
       if (!nombre || !sabor || !tamaño || precio === undefined) {
-        return res.status(400).json({ 
-          message: 'Nombre, sabor, tamaño y precio son requeridos' 
+        return res.status(400).json({
+          message: 'Nombre, sabor, tamaño y precio son requeridos'
         });
       }
 
@@ -59,7 +59,8 @@ export class RefrescoController {
         sabor,
         tamaño,
         precio,
-        disponible: disponible ?? true
+        disponible: disponible ?? true,
+        categoria_id: categoria_id ?? null,
       });
 
       res.status(201).json(refresco);

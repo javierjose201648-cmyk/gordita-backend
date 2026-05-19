@@ -15,6 +15,8 @@
     "seed:promos": "ts-node src/database/promoSeeds.ts",
     "migrate:orden-fix": "ts-node src/database/migrateOrdenFix.ts",
     "seed:precios": "ts-node src/database/seedPreciosUpdate.ts",
+    "migrate:refresco-categoria": "ts-node src/database/migrateRefrescoCategoria.ts",
+    "migrate:categoria-refresco": "ts-node src/database/migrateCategoriaRefresco.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

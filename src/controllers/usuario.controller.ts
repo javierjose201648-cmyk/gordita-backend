@@ -32,6 +32,23 @@ export class UsuarioController {
     }
   }
 
+  static async create(req: Request, res: Response) {
+    try {
+      const { username, password, nombre_completo, rol } = req.body;
+      if (!username || !password || !nombre_completo || !rol) {
+        return res.status(400).json({ message: 'username, password, nombre_completo y rol son requeridos' });
+      }
+      const usuario = await UsuarioModel.create({ username, password, nombre_completo, rol, activo: true });
+      res.status(201).json(usuario);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Error desconocido';
+      if (msg.includes('unique') || msg.includes('duplicate') || msg.includes('ya existe')) {
+        return res.status(409).json({ message: 'El nombre de usuario ya existe' });
+      }
+      res.status(500).json({ message: 'Error al crear usuario', error: msg });
+    }
+  }
+
   static async update(req: Request, res: Response) {
     try {
       const id = parseInt(req.params.id as string);
