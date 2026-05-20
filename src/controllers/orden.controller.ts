@@ -110,8 +110,20 @@ export class OrdenController {
       const ordenes = await OrdenModel.getOrdenesDia();
       res.json(ordenes);
     } catch (error) {
-      res.status(500).json({ 
+      res.status(500).json({
         message: 'Error al obtener órdenes del día',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  }
+
+  static async getOrdenesDelTurno(req: Request, res: Response) {
+    try {
+      const ordenes = await OrdenModel.getOrdenesDelTurno();
+      res.json(ordenes);
+    } catch (error) {
+      res.status(500).json({
+        message: 'Error al obtener órdenes del turno',
         error: error instanceof Error ? error.message : 'Error desconocido'
       });
     }

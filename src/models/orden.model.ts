@@ -260,6 +260,39 @@ export class OrdenModel {
     return result.rowCount !== null && result.rowCount > 0;
   }
 
+  static async getOrdenesDelTurno(): Promise<any[]> {
+    const { TurnoModel } = await import('./turno.model');
+    const turno = await TurnoModel.getActivo();
+    if (!turno) return [];
+
+    const result = await pool.query(`
+      SELECT
+        o.id,
+        o.numero_orden,
+        o.total,
+        o.creado_en,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'guisado', g.nombre,
+              'masa',    tm.nombre,
+              'cantidad', oi.cantidad
+            ) ORDER BY oi.id
+          ) FILTER (WHERE oi.id IS NOT NULL),
+          '[]'
+        ) AS gorditas
+      FROM ordenes o
+      LEFT JOIN orden_items oi ON oi.orden_id = o.id
+      LEFT JOIN guisados g     ON g.id = oi.guisado_id
+      LEFT JOIN tipos_masa tm  ON tm.id = oi.tipo_masa_id
+      WHERE o.creado_en >= $1
+      GROUP BY o.id
+      ORDER BY o.creado_en ASC
+    `, [turno.inicio]);
+
+    return result.rows;
+  }
+
   static async getResumenDia(): Promise<any> {
     const result = await pool.query(
       `SELECT
