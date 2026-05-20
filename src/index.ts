@@ -13,6 +13,7 @@ import promocionRoutes         from './routes/promocion.routes';
 import categoriaRefrescoRoutes from './routes/categoriaRefresco.routes';
 import gastoRoutes             from './routes/gasto.routes';
 import refriRoutes             from './routes/refri.routes';
+import resumenRoutes           from './routes/resumen.routes';
 
 dotenv.config();
 
@@ -65,6 +66,7 @@ app.use('/api/promociones',          promocionRoutes);
 app.use('/api/categorias-refresco',  categoriaRefrescoRoutes);
 app.use('/api/gastos',     gastoRoutes);
 app.use('/api/refri',      refriRoutes);
+app.use('/api/resumen',    resumenRoutes);
 app.use('/api/ordenes',    ordenRoutes);
 
 // ── Local dev: start HTTP server
