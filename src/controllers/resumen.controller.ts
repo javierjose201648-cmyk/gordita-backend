@@ -6,6 +6,10 @@ export class ResumenController {
   static async getHoy(_req: AuthRequest, res: Response): Promise<void> {
     try {
       const resumen = await ResumenModel.getResumenDia();
+      if (!resumen) {
+        res.json(null);
+        return;
+      }
       res.json(resumen);
     } catch (error) {
       console.error('Error al obtener resumen del día:', error);

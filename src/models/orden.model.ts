@@ -1,6 +1,7 @@
 import pool from '../config/database';
 import { PromocionModel, ItemOrdenPool, RefrescoOrdenPool } from './promocion.model';
 import { RefriModel } from './refri.model';
+import { TurnoModel } from './turno.model';
 
 export interface Orden {
   id: number;
@@ -97,6 +98,9 @@ export class OrdenModel {
   }
 
   static async create(ordenData: CrearOrdenDTO): Promise<any> {
+    // Ensure a turno exists — first sale of the day creates it
+    await TurnoModel.getOrCrearActivo();
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');

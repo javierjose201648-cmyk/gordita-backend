@@ -90,6 +90,11 @@ export class UsuarioModel {
     return result.rows[0] || null;
   }
 
+  static async getPasswordHash(id: number): Promise<string | null> {
+    const result = await pool.query('SELECT password FROM usuarios WHERE id = $1', [id]);
+    return result.rows[0]?.password ?? null;
+  }
+
   static async updatePassword(id: number, newPassword: string): Promise<boolean> {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
