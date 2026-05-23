@@ -98,24 +98,25 @@ export class OrdenModel {
   }
 
   static async create(ordenData: CrearOrdenDTO): Promise<any> {
-    // Ensure a turno exists — first sale of the day creates it
-    await TurnoModel.getOrCrearActivo();
+    // Ensure a turno exists — first sale of the shift creates it
+    const turno = await TurnoModel.getOrCrearActivo();
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
-      // Daily sequential order number (CURRENT_DATE matches DB timezone)
+      // Sequential order number resets with each turno (unique per turno_id)
       const countResult = await client.query(
         `SELECT COALESCE(MAX(CAST(numero_orden AS INTEGER)), 0) AS ultimo
-         FROM ordenes WHERE DATE(creado_en) = CURRENT_DATE`
+         FROM ordenes WHERE turno_id = $1`,
+        [turno.id]
       );
       const numeroComanda = parseInt(countResult.rows[0].ultimo) + 1;
 
       const ordenResult = await client.query(
-        `INSERT INTO ordenes (numero_orden, total, estado, notas)
-         VALUES ($1, $2, $3, $4) RETURNING *`,
-        [String(numeroComanda), 0, 'pendiente', ordenData.notas ?? null]
+        `INSERT INTO ordenes (numero_orden, turno_id, total, estado, notas)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [String(numeroComanda), turno.id, 0, 'pendiente', ordenData.notas ?? null]
       );
       const orden = ordenResult.rows[0];
 
@@ -271,22 +272,33 @@ export class OrdenModel {
         o.numero_orden,
         o.total,
         o.creado_en,
-        COALESCE(
-          json_agg(
+        COALESCE((
+          SELECT json_agg(
             json_build_object(
               'guisado', g.nombre,
               'masa',    tm.nombre,
               'cantidad', oi.cantidad
             ) ORDER BY oi.id
-          ) FILTER (WHERE oi.id IS NOT NULL),
-          '[]'
-        ) AS gorditas
+          )
+          FROM orden_items oi
+          JOIN guisados g    ON g.id  = oi.guisado_id
+          JOIN tipos_masa tm ON tm.id = oi.tipo_masa_id
+          WHERE oi.orden_id = o.id
+        ), '[]') AS gorditas,
+        COALESCE((
+          SELECT json_agg(
+            json_build_object(
+              'nombre',   r.nombre,
+              'tamaño',   r.tamaño,
+              'cantidad', ore.cantidad
+            ) ORDER BY ore.id
+          )
+          FROM orden_refrescos ore
+          JOIN refrescos r ON r.id = ore.refresco_id
+          WHERE ore.orden_id = o.id
+        ), '[]') AS bebidas
       FROM ordenes o
-      LEFT JOIN orden_items oi ON oi.orden_id = o.id
-      LEFT JOIN guisados g     ON g.id = oi.guisado_id
-      LEFT JOIN tipos_masa tm  ON tm.id = oi.tipo_masa_id
       WHERE o.creado_en >= $1
-      GROUP BY o.id
       ORDER BY o.creado_en ASC
     `, [turno.inicio]);
 

@@ -16,7 +16,7 @@ export class AuthService {
     };
 
     const secret: jwt.Secret = process.env.JWT_SECRET || 'secret';
-    const expiresIn = (process.env.JWT_EXPIRES_IN || '8h') as jwt.SignOptions['expiresIn'];
+    const expiresIn = (process.env.JWT_EXPIRES_IN || '24h') as jwt.SignOptions['expiresIn'];
     const options: jwt.SignOptions = {
       expiresIn
     };
