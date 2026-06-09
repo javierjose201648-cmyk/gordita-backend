@@ -305,22 +305,4 @@ export class OrdenModel {
     return result.rows;
   }
 
-  static async getResumenDia(): Promise<any> {
-    const result = await pool.query(
-      `SELECT
-        COUNT(*) as total_ordenes,
-        COALESCE(SUM(total), 0) as ventas_total,
-        SUM(CASE WHEN estado = 'pendiente'  THEN 1 ELSE 0 END) as ordenes_pendientes,
-        SUM(CASE WHEN estado = 'completado' THEN 1 ELSE 0 END) as ordenes_completadas
-       FROM ordenes WHERE DATE(creado_en) = CURRENT_DATE`
-    );
-    return result.rows[0];
-  }
-
-  static async getOrdenesDia(): Promise<Orden[]> {
-    const result = await pool.query(
-      `SELECT * FROM ordenes WHERE DATE(creado_en) = CURRENT_DATE ORDER BY creado_en DESC`
-    );
-    return result.rows;
-  }
 }

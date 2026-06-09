@@ -36,12 +36,6 @@ export interface RefrescoOrdenPool {
   cantidad: number;
 }
 
-export interface ResultadoPromocion {
-  promocion_id: number;
-  nombre: string;
-  veces_aplicada: number;
-  descuento: number;
-}
 
 export class PromocionModel {
   static async getAll(): Promise<Promocion[]> {

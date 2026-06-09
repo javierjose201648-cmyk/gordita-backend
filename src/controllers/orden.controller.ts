@@ -93,30 +93,6 @@ export class OrdenController {
     }
   }
 
-  static async getResumenDia(req: Request, res: Response) {
-    try {
-      const resumen = await OrdenModel.getResumenDia();
-      res.json(resumen);
-    } catch (error) {
-      res.status(500).json({ 
-        message: 'Error al obtener resumen del día',
-        error: error instanceof Error ? error.message : 'Error desconocido'
-      });
-    }
-  }
-
-  static async getOrdenesDia(req: Request, res: Response) {
-    try {
-      const ordenes = await OrdenModel.getOrdenesDia();
-      res.json(ordenes);
-    } catch (error) {
-      res.status(500).json({
-        message: 'Error al obtener órdenes del día',
-        error: error instanceof Error ? error.message : 'Error desconocido'
-      });
-    }
-  }
-
   static async getOrdenesDelTurno(req: Request, res: Response) {
     try {
       const ordenes = await OrdenModel.getOrdenesDelTurno();

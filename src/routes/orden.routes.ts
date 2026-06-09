@@ -5,11 +5,9 @@ import { authenticate, authorize } from '../middleware/auth.middleware';
 const router = Router();
 
 // Rutas que pueden usar todos los usuarios autenticados
-router.get('/', authenticate, OrdenController.getAll);
-router.get('/dia',   authenticate, OrdenController.getOrdenesDia);
+router.get('/',      authenticate, OrdenController.getAll);
 router.get('/turno', authenticate, OrdenController.getOrdenesDelTurno);
-router.get('/resumen-dia', authenticate, OrdenController.getResumenDia);
-router.get('/:id', authenticate, OrdenController.getById);
+router.get('/:id',   authenticate, OrdenController.getById);
 router.post('/', authenticate, OrdenController.create);
 
 // Rutas solo para administradores
