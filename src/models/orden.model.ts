@@ -8,7 +8,6 @@ export interface Orden {
   numero_orden: string;
   total: number;
   estado: string;
-  nombre_cliente?: string;
   notas?: string;
   creado_en: Date;
   completado_en?: Date;
@@ -62,13 +61,13 @@ export class OrdenModel {
       const itemsResult = await client.query(
         `SELECT
           oi.*,
-          g.nombre as guisado_nombre,
-          g.precio as guisado_precio,
-          tm.nombre as tipo_masa_nombre,
-          tm.precio_extra as masa_precio_extra
+          COALESCE(g.nombre, '[guisado eliminado]')   AS guisado_nombre,
+          g.precio                                     AS guisado_precio,
+          COALESCE(tm.nombre, '[masa eliminada]')      AS tipo_masa_nombre,
+          tm.precio                                    AS masa_precio_extra
         FROM orden_items oi
-        JOIN guisados g ON oi.guisado_id = g.id
-        JOIN tipos_masa tm ON oi.tipo_masa_id = tm.id
+        LEFT JOIN guisados g    ON oi.guisado_id    = g.id
+        LEFT JOIN tipos_masa tm ON oi.tipo_masa_id  = tm.id
         WHERE oi.orden_id = $1`,
         [id]
       );
@@ -129,12 +128,12 @@ export class OrdenModel {
       for (const item of ordenData.items) {
         const [guisadoRes, masaRes] = await Promise.all([
           client.query('SELECT precio FROM guisados WHERE id = $1', [item.guisado_id]),
-          client.query('SELECT nombre, precio_extra FROM tipos_masa WHERE id = $1', [item.tipo_masa_id]),
+          client.query('SELECT nombre, precio FROM tipos_masa WHERE id = $1', [item.tipo_masa_id]),
         ]);
 
         const guisadoPrecio    = parseFloat(guisadoRes.rows[0].precio);
         const masaNombre       = masaRes.rows[0].nombre as string;
-        const masaPrecioExtra  = parseFloat(masaRes.rows[0].precio_extra);
+        const masaPrecioExtra  = parseFloat(masaRes.rows[0].precio);
         const precioUnitario   = guisadoPrecio + masaPrecioExtra;
         let subtotalItem       = precioUnitario * item.cantidad;
 
@@ -268,41 +267,50 @@ export class OrdenModel {
     const turno = await TurnoModel.getActivo();
     if (!turno) return [];
 
+    // CTE pre-agrupado: un solo pass sobre cada tabla en lugar de subqueries correlacionadas
     const result = await pool.query(`
-      SELECT
-        o.id,
-        o.numero_orden,
-        o.total,
-        o.creado_en,
-        COALESCE((
-          SELECT json_agg(
+      WITH gorditas_agg AS (
+        SELECT
+          oi.orden_id,
+          json_agg(
             json_build_object(
-              'guisado', g.nombre,
-              'masa',    tm.nombre,
+              'guisado',  COALESCE(g.nombre, '[eliminado]'),
+              'masa',     COALESCE(tm.nombre, '[eliminado]'),
               'cantidad', oi.cantidad
             ) ORDER BY oi.id
-          )
-          FROM orden_items oi
-          JOIN guisados g    ON g.id  = oi.guisado_id
-          JOIN tipos_masa tm ON tm.id = oi.tipo_masa_id
-          WHERE oi.orden_id = o.id
-        ), '[]') AS gorditas,
-        COALESCE((
-          SELECT json_agg(
+          ) AS gorditas
+        FROM orden_items oi
+        LEFT JOIN guisados   g  ON g.id  = oi.guisado_id
+        LEFT JOIN tipos_masa tm ON tm.id = oi.tipo_masa_id
+        GROUP BY oi.orden_id
+      ),
+      bebidas_agg AS (
+        SELECT
+          ore.orden_id,
+          json_agg(
             json_build_object(
               'nombre',   r.nombre,
               'tamaño',   r.tamaño,
               'cantidad', ore.cantidad
             ) ORDER BY ore.id
-          )
-          FROM orden_refrescos ore
-          JOIN refrescos r ON r.id = ore.refresco_id
-          WHERE ore.orden_id = o.id
-        ), '[]') AS bebidas
+          ) AS bebidas
+        FROM orden_refrescos ore
+        JOIN refrescos r ON r.id = ore.refresco_id
+        GROUP BY ore.orden_id
+      )
+      SELECT
+        o.id,
+        o.numero_orden,
+        o.total,
+        o.creado_en,
+        COALESCE(ga.gorditas, '[]') AS gorditas,
+        COALESCE(ba.bebidas,  '[]') AS bebidas
       FROM ordenes o
-      WHERE o.creado_en >= $1
+      LEFT JOIN gorditas_agg ga ON ga.orden_id = o.id
+      LEFT JOIN bebidas_agg  ba ON ba.orden_id = o.id
+      WHERE o.turno_id = $1
       ORDER BY o.creado_en ASC
-    `, [turno.inicio]);
+    `, [turno.id]);
 
     return result.rows;
   }

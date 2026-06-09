@@ -3,7 +3,7 @@ import pool from '../config/database';
 export interface TipoMasa {
   id: number;
   nombre: string;
-  precio_extra: number;
+  precio: number;      // precio total de la gordita con esta masa
   disponible: boolean;
   creado_en: Date;
 }
@@ -33,26 +33,26 @@ export class TipoMasaModel {
 
   static async create(tipoMasa: Omit<TipoMasa, 'id' | 'creado_en'>): Promise<TipoMasa> {
     const result = await pool.query(
-      `INSERT INTO tipos_masa (nombre, precio_extra, disponible) 
-       VALUES ($1, $2, $3) 
+      `INSERT INTO tipos_masa (nombre, precio, disponible)
+       VALUES ($1, $2, $3)
        RETURNING *`,
-      [tipoMasa.nombre, tipoMasa.precio_extra, tipoMasa.disponible]
+      [tipoMasa.nombre, tipoMasa.precio, tipoMasa.disponible]
     );
     return result.rows[0];
   }
 
   static async update(id: number, tipoMasa: Partial<Omit<TipoMasa, 'id' | 'creado_en'>>): Promise<TipoMasa | null> {
-    const fields = [];
-    const values = [];
+    const fields: string[] = [];
+    const values: unknown[] = [];
     let paramCount = 1;
 
     if (tipoMasa.nombre !== undefined) {
       fields.push(`nombre = $${paramCount++}`);
       values.push(tipoMasa.nombre);
     }
-    if (tipoMasa.precio_extra !== undefined) {
-      fields.push(`precio_extra = $${paramCount++}`);
-      values.push(tipoMasa.precio_extra);
+    if (tipoMasa.precio !== undefined) {
+      fields.push(`precio = $${paramCount++}`);
+      values.push(tipoMasa.precio);
     }
     if (tipoMasa.disponible !== undefined) {
       fields.push(`disponible = $${paramCount++}`);

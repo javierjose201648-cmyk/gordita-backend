@@ -46,17 +46,17 @@ export class TipoMasaController {
 
   static async create(req: Request, res: Response) {
     try {
-      const { nombre, precio_extra, disponible } = req.body;
+      const { nombre, precio, disponible } = req.body;
 
       if (!nombre) {
-        return res.status(400).json({ 
-          message: 'Nombre es requerido' 
+        return res.status(400).json({
+          message: 'Nombre es requerido'
         });
       }
 
       const tipoMasa = await TipoMasaModel.create({
         nombre,
-        precio_extra: precio_extra ?? 0,
+        precio: precio ?? 0,
         disponible: disponible ?? true
       });
 
