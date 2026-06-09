@@ -53,9 +53,9 @@ export class ResumenModel {
   static async getResumenDia(): Promise<ResumenDia | null> {
     const turno = await TurnoModel.getActivo();
     if (!turno) return null;
-    const inicio = turno.inicio;
+    const turnoId = turno.id;
 
-    // ── Gorditas vendidas desde el inicio del turno ──
+    // ── Gorditas vendidas del turno (#7: filtro por turno_id) ──
     const gorditasRes = await pool.query(`
       SELECT
         COALESCE(tm.nombre, 'Sin tipo') AS masa_nombre,
@@ -64,12 +64,12 @@ export class ResumenModel {
       FROM orden_items oi
       LEFT JOIN tipos_masa tm ON oi.tipo_masa_id = tm.id
       JOIN ordenes o ON oi.orden_id = o.id
-      WHERE o.creado_en >= $1
+      WHERE o.turno_id = $1
       GROUP BY tm.nombre
       ORDER BY tm.nombre ASC
-    `, [inicio]);
+    `, [turnoId]);
 
-    // ── Refrescos vendidos desde el inicio del turno ──
+    // ── Refrescos vendidos del turno (#7: filtro por turno_id) ──
     const refrescosVendidosRes = await pool.query(`
       SELECT
         r.nombre                             AS categoria_nombre,
@@ -78,29 +78,29 @@ export class ResumenModel {
       FROM orden_refrescos ore
       JOIN refrescos r ON ore.refresco_id = r.id
       JOIN ordenes o ON ore.orden_id = o.id
-      WHERE o.creado_en >= $1
+      WHERE o.turno_id = $1
       GROUP BY r.nombre
       ORDER BY r.nombre ASC
-    `, [inicio]);
+    `, [turnoId]);
 
-    // ── Ventas totales, en efectivo y en tarjeta del turno ──
+    // ── Ventas totales, en efectivo y en tarjeta del turno (#7: filtro por turno_id) ──
     const ventasRes = await pool.query(`
       SELECT
-        COALESCE(SUM(total), 0)::numeric                                     AS total_ventas,
+        COALESCE(SUM(total), 0)::numeric                                         AS total_ventas,
         COALESCE(SUM(total) FILTER (WHERE metodo_pago = 'efectivo'), 0)::numeric AS ventas_efectivo,
         COALESCE(SUM(total) FILTER (WHERE metodo_pago = 'tarjeta'),  0)::numeric AS ventas_tarjeta
       FROM ordenes
-      WHERE creado_en >= $1
-    `, [inicio]);
+      WHERE turno_id = $1
+    `, [turnoId]);
 
-    // ── Gastos del turno ──
+    // ── Gastos del turno (#9: filtro por turno_id, ya no se borran al cerrar) ──
     const gastosRes = await pool.query(`
       SELECT g.*, u.nombre_completo AS usuario_nombre
       FROM gastos g
       LEFT JOIN usuarios u ON u.id = g.usuario_id
-      WHERE g.creado_en >= $1
+      WHERE g.turno_id = $1
       ORDER BY g.creado_en ASC
-    `, [inicio]);
+    `, [turnoId]);
 
     // ── Movimientos de caja del turno (con nombre de quien lo registró) ──
     const cajaRes = await pool.query(`
@@ -191,16 +191,11 @@ export class ResumenModel {
   /**
    * Cierra el turno activo:
    * - Guarda cuánto dinero queda en caja para el siguiente turno
-   * - Borra los gastos del turno
-   * - Los movimientos de caja se conservan (auditoría permanente)
-   * - Las órdenes se conservan (historial)
+   * - Gastos, órdenes y movimientos de caja se conservan (historial permanente)
    */
   static async cerrarTurno(cajaFinal: number = 0): Promise<void> {
     const turno = await TurnoModel.getActivo();
     if (!turno) return;
-
-    // Borrar gastos registrados durante este turno
-    await pool.query(`DELETE FROM gastos WHERE creado_en >= $1`, [turno.inicio]);
 
     // Cerrar el turno guardando el saldo de caja para mañana
     await TurnoModel.cerrar(turno.id, cajaFinal);
