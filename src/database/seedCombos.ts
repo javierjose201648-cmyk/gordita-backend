@@ -1,11 +1,14 @@
 /**
- * Seed: crea las 2 bebidas combo y actualiza los precios de las promociones.
+ * Seed: actualiza precios y condiciones de los 2 combos.
  *
- * Combo Familiar  (promo id=2): 10 gorditas harina + Refresco 1.75 combo = $228
+ * Combo Familiar  (COMBO_FAMILIAR):  10 gorditas harina + Refresco 1.75 combo = $228
  *   → Refresco 1.75 combo: $228 - (10 × $20) = $28
  *
- * Combo Individual (promo id=1): 3 gorditas harina + Lata combo = $80
+ * Combo Individual (COMBO_INDIVIDUAL): 3 gorditas harina + Lata combo = $80
  *   → Lata combo: $80 - (3 × $20) = $20
+ *
+ * Los IDs se resuelven por nombre en lugar de estar hardcodeados,
+ * para que el seed funcione correctamente aunque se recree la DB.
  */
 import pool from '../config/database';
 import dotenv from 'dotenv';
@@ -16,38 +19,59 @@ async function seed() {
   try {
     await client.query('BEGIN');
 
-    // ── 1. Actualizar precios de los promos ──────────────────────────────
-    await client.query(`UPDATE promociones SET precio_fijo = 228 WHERE id = 2`);
-    await client.query(`UPDATE promociones SET precio_fijo = 80  WHERE id = 1`);
+    // ── 0. Resolver IDs por nombre (sin hardcodear) ──────────────────────────
+    const familiarRes    = await client.query(
+      `SELECT id FROM promociones WHERE nombre = 'COMBO_FAMILIAR' LIMIT 1`
+    );
+    const individualRes  = await client.query(
+      `SELECT id FROM promociones WHERE nombre = 'COMBO_INDIVIDUAL' LIMIT 1`
+    );
 
-    // ── 2. Limpiar condiciones anteriores y recrearlas ───────────────────
-    await client.query(`DELETE FROM promocion_condiciones WHERE promocion_id IN (1, 2)`);
+    if (!familiarRes.rows[0] || !individualRes.rows[0]) {
+      throw new Error(
+        'Promos no encontradas — ejecuta promoSeeds.ts primero para crear COMBO_FAMILIAR y COMBO_INDIVIDUAL'
+      );
+    }
 
-    // COMBO_FAMILIAR (id=2): requiere 10 gorditas de Harina
+    const familiarId    = familiarRes.rows[0].id as number;
+    const individualId  = individualRes.rows[0].id as number;
+
+    // ── 1. Actualizar precios de los promos ──────────────────────────────────
+    await client.query(`UPDATE promociones SET precio_fijo = 228 WHERE id = $1`, [familiarId]);
+    await client.query(`UPDATE promociones SET precio_fijo = 80  WHERE id = $1`, [individualId]);
+
+    // ── 2. Limpiar condiciones anteriores y recrearlas ───────────────────────
+    await client.query(
+      `DELETE FROM promocion_condiciones WHERE promocion_id IN ($1, $2)`,
+      [familiarId, individualId]
+    );
+
+    // COMBO_FAMILIAR: requiere 10 gorditas de Harina
     await client.query(`
       INSERT INTO promocion_condiciones (promocion_id, tipo, cantidad, tipo_masa_nombre)
-      VALUES (2, 'gorditas_masa', 10, 'Harina')
-    `);
+      VALUES ($1, 'gorditas_masa', 10, 'Harina')
+    `, [familiarId]);
 
-    // COMBO_INDIVIDUAL (id=1): requiere 3 gorditas de Harina
+    // COMBO_INDIVIDUAL: requiere 3 gorditas de Harina
     await client.query(`
       INSERT INTO promocion_condiciones (promocion_id, tipo, cantidad, tipo_masa_nombre)
-      VALUES (1, 'gorditas_masa', 3, 'Harina')
-    `);
+      VALUES ($1, 'gorditas_masa', 3, 'Harina')
+    `, [individualId]);
 
-    // ── 3. Actualizar descripciones de los promos ────────────────────────
+    // ── 3. Actualizar descripciones ──────────────────────────────────────────
     await client.query(`
       UPDATE promociones
       SET descripcion = '10 gorditas de harina con guisados a escoger + 1 refresco 1.75 L'
-      WHERE id = 2
-    `);
+      WHERE id = $1
+    `, [familiarId]);
+
     await client.query(`
       UPDATE promociones
       SET descripcion = '1 gordita de frijoles con queso + 2 gorditas a elegir de harina + 1 refresco de lata'
-      WHERE id = 1
-    `);
+      WHERE id = $1
+    `, [individualId]);
 
-    // ── 4. Crear bebida "Refresco 1.75 combo" (categoria Familiar = id 3) ──
+    // ── 4. Crear/actualizar bebida "Refresco 1.75 combo" ────────────────────
     const existeFamiliar = await client.query(
       `SELECT id FROM refrescos WHERE nombre = 'Refresco 1.75 combo' LIMIT 1`
     );
@@ -62,7 +86,7 @@ async function seed() {
       console.log('✓ Actualizado: Refresco 1.75 combo ($28)');
     }
 
-    // ── 5. Crear bebida "Lata combo" (categoria Lata = id 2) ─────────────
+    // ── 5. Crear/actualizar bebida "Lata combo" ──────────────────────────────
     const existeLata = await client.query(
       `SELECT id FROM refrescos WHERE nombre = 'Lata combo' LIMIT 1`
     );
@@ -78,7 +102,7 @@ async function seed() {
     }
 
     await client.query('COMMIT');
-    console.log('✓ Seed de combos completado correctamente');
+    console.log(`✓ Seed de combos completado (familiar=${familiarId}, individual=${individualId})`);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

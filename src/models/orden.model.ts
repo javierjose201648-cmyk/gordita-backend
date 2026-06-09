@@ -72,15 +72,27 @@ export class OrdenModel {
         [id]
       );
 
-      for (const item of itemsResult.rows) {
+      // Batch query: un solo round-trip para todos los extras en lugar de un query por item
+      const itemIds: number[] = itemsResult.rows.map((r: any) => r.id as number);
+      if (itemIds.length > 0) {
         const extrasResult = await client.query(
-          `SELECT oie.*, e.nombre as extra_nombre
+          `SELECT oie.*, e.nombre AS extra_nombre
            FROM orden_item_extras oie
            JOIN extras e ON oie.extra_id = e.id
-           WHERE oie.orden_item_id = $1`,
-          [item.id]
+           WHERE oie.orden_item_id = ANY($1::int[])`,
+          [itemIds]
         );
-        item.extras = extrasResult.rows;
+        const extrasByItem = new Map<number, any[]>();
+        for (const extra of extrasResult.rows) {
+          const arr = extrasByItem.get(extra.orden_item_id) ?? [];
+          arr.push(extra);
+          extrasByItem.set(extra.orden_item_id, arr);
+        }
+        for (const item of itemsResult.rows) {
+          item.extras = extrasByItem.get(item.id) ?? [];
+        }
+      } else {
+        for (const item of itemsResult.rows) item.extras = [];
       }
 
       const refrescosResult = await client.query(
@@ -104,6 +116,11 @@ export class OrdenModel {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+
+      // Lock por turno para evitar race condition en el número de orden.
+      // Dos cajeros simultáneos en el mismo turno esperan el uno al otro
+      // antes de calcular el MAX — sin esto podrían obtener el mismo número.
+      await client.query(`SELECT pg_advisory_xact_lock($1)`, [turno.id]);
 
       // Sequential order number resets with each turno (unique per turno_id)
       const countResult = await client.query(

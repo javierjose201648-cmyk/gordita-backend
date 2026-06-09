@@ -46,23 +46,32 @@ export class PromocionModel {
   }
 
   static async getActivas(): Promise<PromocionConCondiciones[]> {
-    const result = await pool.query(
-      `SELECT * FROM promociones
-       WHERE activa = true
-       AND (fecha_inicio IS NULL OR fecha_inicio <= CURRENT_DATE)
-       AND (fecha_fin IS NULL OR fecha_fin >= CURRENT_DATE)
-       ORDER BY precio_fijo ASC`
-    );
-
-    const promociones: PromocionConCondiciones[] = [];
-    for (const promo of result.rows) {
-      const condResult = await pool.query(
-        'SELECT * FROM promocion_condiciones WHERE promocion_id = $1 ORDER BY id ASC',
-        [promo.id]
-      );
-      promociones.push({ ...promo, condiciones: condResult.rows });
-    }
-    return promociones;
+    // Un solo JOIN con json_agg en lugar de un query por cada promo
+    const result = await pool.query(`
+      SELECT
+        p.*,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id',               pc.id,
+              'promocion_id',     pc.promocion_id,
+              'tipo',             pc.tipo,
+              'cantidad',         pc.cantidad,
+              'tipo_masa_nombre', pc.tipo_masa_nombre,
+              'tamaño_refresco',  pc.tamaño_refresco
+            ) ORDER BY pc.id
+          ) FILTER (WHERE pc.id IS NOT NULL),
+          '[]'
+        ) AS condiciones
+      FROM promociones p
+      LEFT JOIN promocion_condiciones pc ON pc.promocion_id = p.id
+      WHERE p.activa = true
+        AND (p.fecha_inicio IS NULL OR p.fecha_inicio <= CURRENT_DATE)
+        AND (p.fecha_fin    IS NULL OR p.fecha_fin    >= CURRENT_DATE)
+      GROUP BY p.id
+      ORDER BY p.precio_fijo ASC
+    `);
+    return result.rows;
   }
 
   static async getById(id: number): Promise<PromocionConCondiciones | null> {
