@@ -16,6 +16,7 @@ export interface Orden {
 
 export interface CrearOrdenDTO {
   notas?: string;
+  metodo_pago?: 'efectivo' | 'tarjeta';  // método de pago — default: efectivo
   promocion_id?: number;   // si viene → orden de promo, se valida y aplica precio_fijo
   items: {
     tipo_masa_id: number;
@@ -113,10 +114,11 @@ export class OrdenModel {
       );
       const numeroComanda = parseInt(countResult.rows[0].ultimo) + 1;
 
+      const metodo = ordenData.metodo_pago ?? 'efectivo';
       const ordenResult = await client.query(
-        `INSERT INTO ordenes (numero_orden, turno_id, total, estado, notas)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [String(numeroComanda), turno.id, 0, 'pendiente', ordenData.notas ?? null]
+        `INSERT INTO ordenes (numero_orden, turno_id, total, estado, notas, metodo_pago)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [String(numeroComanda), turno.id, 0, 'pendiente', ordenData.notas ?? null, metodo]
       );
       const orden = ordenResult.rows[0];
 

@@ -17,10 +17,14 @@ export class ResumenController {
     }
   }
 
-  /** Cierre de turno: elimina los gastos del día (las órdenes se conservan como registro). */
-  static async cerrarTurno(_req: AuthRequest, res: Response): Promise<void> {
+  /**
+   * Cierre de turno.
+   * Body: { caja_final: number } — cuánto dinero se deja en la caja para mañana.
+   */
+  static async cerrarTurno(req: AuthRequest, res: Response): Promise<void> {
     try {
-      await ResumenModel.cerrarTurno();
+      const cajaFinal = parseFloat(req.body?.caja_final ?? 0) || 0;
+      await ResumenModel.cerrarTurno(cajaFinal);
       res.json({ message: 'Turno cerrado correctamente' });
     } catch (error) {
       console.error('Error al cerrar turno:', error);

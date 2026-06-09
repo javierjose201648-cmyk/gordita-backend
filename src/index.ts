@@ -12,6 +12,7 @@ import usuarioRoutes    from './routes/usuario.routes';
 import promocionRoutes         from './routes/promocion.routes';
 import categoriaRefrescoRoutes from './routes/categoriaRefresco.routes';
 import gastoRoutes             from './routes/gasto.routes';
+import cajaRoutes              from './routes/caja.routes';
 import refriRoutes             from './routes/refri.routes';
 import resumenRoutes           from './routes/resumen.routes';
 
@@ -67,6 +68,7 @@ app.use('/api/refrescos',  refrescoRoutes);
 app.use('/api/promociones',          promocionRoutes);
 app.use('/api/categorias-refresco',  categoriaRefrescoRoutes);
 app.use('/api/gastos',     gastoRoutes);
+app.use('/api/caja',       cajaRoutes);
 app.use('/api/refri',      refriRoutes);
 app.use('/api/resumen',    resumenRoutes);
 app.use('/api/ordenes',    ordenRoutes);

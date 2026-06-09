@@ -1,5 +1,6 @@
 import pool from '../config/database';
 import { TurnoModel } from './turno.model';
+import { CajaMovimiento } from './caja.model';
 
 export interface GorditaResumen {
   masa_nombre: string;
@@ -16,15 +17,27 @@ export interface RefrescoVendidoResumen {
 export interface ResumenDia {
   turno_id: number;
   turno_inicio: Date;
-  total_gorditas_pesos: number;
-  total_refrescos_pesos: number;
+  // Ventas generales
   total_ventas: number;
+  ventas_efectivo: number;
+  ventas_tarjeta: number;
+  // Gorditas
   gorditas: GorditaResumen[];
   total_gorditas: number;
+  total_gorditas_pesos: number;
+  // Refrescos
   refrescos_vendidos: RefrescoVendidoResumen[];
   total_refrescos: number;
+  total_refrescos_pesos: number;
+  // Gastos
   gastos: any[];
   total_gastos: number;
+  // Caja
+  caja_inicial: number;
+  movimientos_caja: CajaMovimiento[];
+  total_movimientos_caja: number;
+  caja_esperada: number;
+  // Refri
   refri_actual: {
     categoria_id: number;
     categoria_nombre: string;
@@ -70,19 +83,39 @@ export class ResumenModel {
       ORDER BY r.nombre ASC
     `, [inicio]);
 
-    // ── Total ventas del turno ──
+    // ── Ventas totales, en efectivo y en tarjeta del turno ──
     const ventasRes = await pool.query(`
-      SELECT COALESCE(SUM(total), 0)::numeric AS total_ventas
+      SELECT
+        COALESCE(SUM(total), 0)::numeric                                     AS total_ventas,
+        COALESCE(SUM(total) FILTER (WHERE metodo_pago = 'efectivo'), 0)::numeric AS ventas_efectivo,
+        COALESCE(SUM(total) FILTER (WHERE metodo_pago = 'tarjeta'),  0)::numeric AS ventas_tarjeta
       FROM ordenes
       WHERE creado_en >= $1
     `, [inicio]);
 
     // ── Gastos del turno ──
     const gastosRes = await pool.query(`
-      SELECT * FROM gastos
-      WHERE creado_en >= $1
-      ORDER BY creado_en ASC
+      SELECT g.*, u.nombre_completo AS usuario_nombre
+      FROM gastos g
+      LEFT JOIN usuarios u ON u.id = g.usuario_id
+      WHERE g.creado_en >= $1
+      ORDER BY g.creado_en ASC
     `, [inicio]);
+
+    // ── Movimientos de caja del turno (con nombre de quien lo registró) ──
+    const cajaRes = await pool.query(`
+      SELECT
+        cm.id,
+        cm.turno_id,
+        cm.monto::numeric AS monto,
+        cm.usuario_id,
+        u.nombre_completo AS usuario_nombre,
+        cm.creado_en
+      FROM caja_movimientos cm
+      LEFT JOIN usuarios u ON u.id = cm.usuario_id
+      WHERE cm.turno_id = $1
+      ORDER BY cm.creado_en ASC
+    `, [turno.id]);
 
     // ── Inventario actual del refri (siempre el estado actual) ──
     const refriRes = await pool.query(`
@@ -109,18 +142,44 @@ export class ResumenModel {
     const gastos = gastosRes.rows;
     const totalGastos = gastos.reduce((s: number, g: any) => s + parseFloat(g.monto), 0);
 
+    const movimientosCaja: CajaMovimiento[] = cajaRes.rows.map(r => ({
+      ...r,
+      monto: parseFloat(r.monto),
+    }));
+    const totalMovimientosCaja = movimientosCaja.reduce((s, m) => s + m.monto, 0);
+
+    const totalVentas    = parseFloat(ventasRes.rows[0].total_ventas);
+    const ventasEfectivo = parseFloat(ventasRes.rows[0].ventas_efectivo);
+    const ventasTarjeta  = parseFloat(ventasRes.rows[0].ventas_tarjeta);
+    const cajaInicial    = turno.caja_inicial;
+
+    // Caja esperada = lo que inició + ventas en efectivo + ingresos manuales - gastos
+    const cajaEsperada = cajaInicial + ventasEfectivo + totalMovimientosCaja - totalGastos;
+
     return {
       turno_id:    turno.id,
       turno_inicio: turno.inicio,
-      total_ventas: parseFloat(ventasRes.rows[0].total_ventas),
+      // Ventas
+      total_ventas: totalVentas,
+      ventas_efectivo: ventasEfectivo,
+      ventas_tarjeta: ventasTarjeta,
+      // Gorditas
       gorditas,
       total_gorditas:       gorditas.reduce((s, g) => s + g.cantidad, 0),
       total_gorditas_pesos: gorditas.reduce((s, g) => s + g.subtotal, 0),
+      // Refrescos
       refrescos_vendidos:   refrescosVendidos,
       total_refrescos:       refrescosVendidos.reduce((s, r) => s + r.cantidad, 0),
       total_refrescos_pesos: refrescosVendidos.reduce((s, r) => s + r.subtotal, 0),
+      // Gastos
       gastos,
       total_gastos: totalGastos,
+      // Caja
+      caja_inicial:         cajaInicial,
+      movimientos_caja:     movimientosCaja,
+      total_movimientos_caja: totalMovimientosCaja,
+      caja_esperada:        cajaEsperada,
+      // Refri
       refri_actual: refriRes.rows.map(r => ({
         categoria_id:     r.categoria_id,
         categoria_nombre: r.categoria_nombre,
@@ -130,17 +189,20 @@ export class ResumenModel {
   }
 
   /**
-   * Cierra el turno activo: borra los gastos del turno y marca el turno como cerrado.
-   * Las órdenes se conservan para historial.
+   * Cierra el turno activo:
+   * - Guarda cuánto dinero queda en caja para el siguiente turno
+   * - Borra los gastos del turno
+   * - Los movimientos de caja se conservan (auditoría permanente)
+   * - Las órdenes se conservan (historial)
    */
-  static async cerrarTurno(): Promise<void> {
+  static async cerrarTurno(cajaFinal: number = 0): Promise<void> {
     const turno = await TurnoModel.getActivo();
     if (!turno) return;
 
     // Borrar gastos registrados durante este turno
     await pool.query(`DELETE FROM gastos WHERE creado_en >= $1`, [turno.inicio]);
 
-    // Cerrar el turno — el siguiente getOrCrearActivo creará uno nuevo
-    await TurnoModel.cerrar(turno.id);
+    // Cerrar el turno guardando el saldo de caja para mañana
+    await TurnoModel.cerrar(turno.id, cajaFinal);
   }
 }
