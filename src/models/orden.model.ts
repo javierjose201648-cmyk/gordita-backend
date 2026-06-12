@@ -275,8 +275,161 @@ export class OrdenModel {
   }
 
   static async delete(id: number): Promise<boolean> {
-    const result = await pool.query('DELETE FROM ordenes WHERE id = $1', [id]);
-    return result.rowCount !== null && result.rowCount > 0;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Snapshot refrescos before cascade-delete, so we can restore refri inventory
+      const refRes = await client.query(
+        'SELECT refresco_id, cantidad FROM orden_refrescos WHERE orden_id = $1',
+        [id]
+      );
+
+      const result = await client.query('DELETE FROM ordenes WHERE id = $1', [id]);
+      if (!result.rowCount) { await client.query('ROLLBACK'); return false; }
+
+      // Restore refri inventory for every refresco that was in the order
+      for (const r of refRes.rows) {
+        const catRes = await client.query(
+          'SELECT categoria_id FROM refrescos WHERE id = $1',
+          [r.refresco_id]
+        );
+        const catId: number | null = catRes.rows[0]?.categoria_id ?? null;
+        if (catId) {
+          await client.query(
+            `UPDATE refri_inventario
+                SET cantidad = GREATEST(0, cantidad + $1), actualizado_en = NOW()
+              WHERE categoria_id = $2`,
+            [r.cantidad, catId]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      return true;
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* already rolled back */ }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Replaces the items and refrescos of an existing order with new quantities.
+   * Items with cantidad = 0 are deleted. Prices per unit are kept from the original
+   * order (no re-query of the catalog). Refri inventory is adjusted for the delta
+   * in refresco quantities (restores removed, deducts added).
+   */
+  static async replaceContenido(
+    ordenId: number,
+    updates: {
+      items:     { id: number; cantidad: number }[];
+      refrescos: { id: number; cantidad: number }[];
+    }
+  ): Promise<any | null> {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const ordenRes = await client.query('SELECT id FROM ordenes WHERE id = $1', [ordenId]);
+      if (ordenRes.rows.length === 0) { await client.query('ROLLBACK'); return null; }
+
+      // Snapshot current refresco quantities for refri delta calculation
+      const oldRefRes = await client.query(
+        'SELECT id, refresco_id, cantidad FROM orden_refrescos WHERE orden_id = $1',
+        [ordenId]
+      );
+      const oldRefMap = new Map<number, { refresco_id: number; cantidad: number }>();
+      for (const r of oldRefRes.rows) {
+        oldRefMap.set(r.id, { refresco_id: r.refresco_id, cantidad: Number(r.cantidad) });
+      }
+
+      // Process gordita updates
+      for (const item of updates.items) {
+        if (item.cantidad <= 0) {
+          await client.query(
+            'DELETE FROM orden_items WHERE id = $1 AND orden_id = $2',
+            [item.id, ordenId]
+          );
+        } else {
+          const priceRes = await client.query(
+            'SELECT precio_unitario FROM orden_items WHERE id = $1 AND orden_id = $2',
+            [item.id, ordenId]
+          );
+          if (priceRes.rows.length > 0) {
+            const precio = parseFloat(priceRes.rows[0].precio_unitario);
+            await client.query(
+              'UPDATE orden_items SET cantidad = $1, subtotal = $2 WHERE id = $3',
+              [item.cantidad, precio * item.cantidad, item.id]
+            );
+          }
+        }
+      }
+
+      // Process refresco updates + build new-quantity map for refri delta
+      const newRefMap = new Map<number, number>(); // refresco_id → new total cantidad
+      for (const ref of updates.refrescos) {
+        if (ref.cantidad <= 0) {
+          await client.query(
+            'DELETE FROM orden_refrescos WHERE id = $1 AND orden_id = $2',
+            [ref.id, ordenId]
+          );
+          // new cantidad = 0 (not added to newRefMap)
+        } else {
+          const rRes = await client.query(
+            'SELECT refresco_id, precio_unitario FROM orden_refrescos WHERE id = $1 AND orden_id = $2',
+            [ref.id, ordenId]
+          );
+          if (rRes.rows.length > 0) {
+            const precio = parseFloat(rRes.rows[0].precio_unitario);
+            const refrescoId: number = rRes.rows[0].refresco_id;
+            await client.query(
+              'UPDATE orden_refrescos SET cantidad = $1, subtotal = $2 WHERE id = $3',
+              [ref.cantidad, precio * ref.cantidad, ref.id]
+            );
+            newRefMap.set(refrescoId, (newRefMap.get(refrescoId) ?? 0) + ref.cantidad);
+          }
+        }
+      }
+
+      // Recalculate total from DB state
+      const totalRes = await client.query(`
+        SELECT
+          COALESCE((SELECT SUM(subtotal) FROM orden_items     WHERE orden_id = $1), 0) +
+          COALESCE((SELECT SUM(subtotal) FROM orden_refrescos WHERE orden_id = $1), 0) AS total
+      `, [ordenId]);
+      const nuevoTotal = parseFloat(totalRes.rows[0].total);
+      await client.query('UPDATE ordenes SET total = $1 WHERE id = $2', [nuevoTotal, ordenId]);
+
+      // Adjust refri: restore what was removed, deduct what was added beyond original
+      for (const [rowId, old] of oldRefMap) {
+        const newCantidad = newRefMap.get(old.refresco_id) ?? 0;
+        const delta = old.cantidad - newCantidad; // positive → restore to refri
+        if (delta === 0) continue;
+        const catRes = await client.query(
+          'SELECT categoria_id FROM refrescos WHERE id = $1',
+          [old.refresco_id]
+        );
+        const catId: number | null = catRes.rows[0]?.categoria_id ?? null;
+        if (catId) {
+          await client.query(
+            `UPDATE refri_inventario
+                SET cantidad = GREATEST(0, cantidad + $1), actualizado_en = NOW()
+              WHERE categoria_id = $2`,
+            [delta, catId]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+      return await OrdenModel.getById(ordenId);
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* already rolled back */ }
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   static async getOrdenesDelTurno(): Promise<any[]> {

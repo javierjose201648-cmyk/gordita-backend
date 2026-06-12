@@ -93,6 +93,30 @@ export class OrdenController {
     }
   }
 
+  static async update(req: Request, res: Response) {
+    try {
+      const id = parseInt(req.params.id as string);
+      const { items, refrescos } = req.body;
+
+      if (!Array.isArray(items) || !Array.isArray(refrescos)) {
+        return res.status(400).json({ message: 'items y refrescos son requeridos' });
+      }
+
+      const orden = await OrdenModel.replaceContenido(id, { items, refrescos });
+
+      if (!orden) {
+        return res.status(404).json({ message: 'Orden no encontrada' });
+      }
+
+      res.json(orden);
+    } catch (error) {
+      res.status(500).json({
+        message: 'Error al actualizar orden',
+        error: error instanceof Error ? error.message : 'Error desconocido',
+      });
+    }
+  }
+
   static async getOrdenesDelTurno(req: Request, res: Response) {
     try {
       const ordenes = await OrdenModel.getOrdenesDelTurno();
