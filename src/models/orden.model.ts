@@ -472,6 +472,7 @@ export class OrdenModel {
         o.id,
         o.numero_orden,
         o.total,
+        o.estado,
         o.creado_en,
         COALESCE(ga.gorditas, '[]') AS gorditas,
         COALESCE(ba.bebidas,  '[]') AS bebidas
