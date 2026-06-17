@@ -27,6 +27,17 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   next();
 };
 
+export const kitchenAuth = (req: Request, res: Response, next: NextFunction) => {
+  const token    = req.headers['x-kitchen-token'] as string | undefined;
+  const expected = process.env.KITCHEN_TOKEN;
+
+  if (!expected || !token || token !== expected) {
+    return res.status(401).json({ message: 'Acceso no autorizado' });
+  }
+
+  next();
+};
+
 export const authorize = (...roles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     if (!req.user) {

@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import { OrdenController } from '../controllers/orden.controller';
-import { authenticate, authorize } from '../middleware/auth.middleware';
+import { authenticate, authorize, kitchenAuth } from '../middleware/auth.middleware';
 
 const router = Router();
+
+// Endpoint de solo lectura para la pantalla de cocina (usa KITCHEN_TOKEN, no JWT)
+router.get('/cocina', kitchenAuth, OrdenController.getOrdenesDelTurno);
 
 // Rutas que pueden usar todos los usuarios autenticados
 router.get('/',      authenticate, OrdenController.getAll);
