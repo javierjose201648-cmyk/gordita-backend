@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS orden_items (
   tipo_masa_id INTEGER REFERENCES tipos_masa(id),
   guisado_id INTEGER REFERENCES guisados(id),
   cantidad INTEGER DEFAULT 1,
+  plato INTEGER NOT NULL DEFAULT 1,
   precio_unitario DECIMAL(10, 2) NOT NULL,
   subtotal DECIMAL(10, 2) NOT NULL,
   creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP

@@ -21,6 +21,7 @@ export interface CrearOrdenDTO {
     tipo_masa_id: number;
     guisado_id: number;
     cantidad: number;
+    plato?: number;
     extras?: { extra_id: number; cantidad: number }[];
   }[];
   refrescos?: {
@@ -155,9 +156,9 @@ export class OrdenModel {
         let subtotalItem       = precioUnitario * item.cantidad;
 
         const itemRes = await client.query(
-          `INSERT INTO orden_items (orden_id, tipo_masa_id, guisado_id, cantidad, precio_unitario, subtotal)
-           VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-          [orden.id, item.tipo_masa_id, item.guisado_id, item.cantidad, precioUnitario, subtotalItem]
+          `INSERT INTO orden_items (orden_id, tipo_masa_id, guisado_id, cantidad, plato, precio_unitario, subtotal)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+          [orden.id, item.tipo_masa_id, item.guisado_id, item.cantidad, item.plato ?? 1, precioUnitario, subtotalItem]
         );
         const ordenItem = itemRes.rows[0];
 
@@ -446,8 +447,9 @@ export class OrdenModel {
             json_build_object(
               'guisado',  COALESCE(g.nombre, '[eliminado]'),
               'masa',     COALESCE(tm.nombre, '[eliminado]'),
-              'cantidad', oi.cantidad
-            ) ORDER BY oi.id
+              'cantidad', oi.cantidad,
+              'plato',    oi.plato
+            ) ORDER BY oi.plato, oi.id
           ) AS gorditas
         FROM orden_items oi
         LEFT JOIN guisados   g  ON g.id  = oi.guisado_id
