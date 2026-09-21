@@ -21,6 +21,7 @@
     "migrate:gastos": "ts-node src/database/migrateGastos.ts",
     "migrate:refri": "ts-node src/database/migrateRefri.ts",
     "migrate:plato": "ts-node src/database/migratePlato.ts",
+    "migrate:para-llevar": "ts-node src/database/migrateParaLlevar.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

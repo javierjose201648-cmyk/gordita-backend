@@ -16,6 +16,7 @@ export interface Orden {
 export interface CrearOrdenDTO {
   notas?: string;
   metodo_pago?: 'efectivo' | 'tarjeta';  // método de pago — default: efectivo
+  para_llevar?: boolean;   // true = para llevar — default: comer aquí
   promocion_id?: number;   // si viene → orden de promo, se valida y aplica precio_fijo
   items: {
     tipo_masa_id: number;
@@ -133,9 +134,9 @@ export class OrdenModel {
 
       const metodo = ordenData.metodo_pago ?? 'efectivo';
       const ordenResult = await client.query(
-        `INSERT INTO ordenes (numero_orden, turno_id, total, estado, notas, metodo_pago)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-        [String(numeroComanda), turno.id, 0, 'pendiente', ordenData.notas ?? null, metodo]
+        `INSERT INTO ordenes (numero_orden, turno_id, total, estado, notas, metodo_pago, para_llevar)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [String(numeroComanda), turno.id, 0, 'pendiente', ordenData.notas ?? null, metodo, ordenData.para_llevar === true]
       );
       const orden = ordenResult.rows[0];
 
@@ -475,6 +476,7 @@ export class OrdenModel {
         o.numero_orden,
         o.total,
         o.estado,
+        o.para_llevar,
         o.creado_en,
         COALESCE(ga.gorditas, '[]') AS gorditas,
         COALESCE(ba.bebidas,  '[]') AS bebidas
