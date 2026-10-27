@@ -355,8 +355,12 @@ export class OrdenModel {
             [item.id, ordenId]
           );
         } else {
+          // precio_unitario no incluye extras (queso) → sumarlos para no perderlos al editar
           const priceRes = await client.query(
-            'SELECT precio_unitario FROM orden_items WHERE id = $1 AND orden_id = $2',
+            `SELECT oi.precio_unitario +
+                    COALESCE((SELECT SUM(oie.precio) FROM orden_item_extras oie
+                              WHERE oie.orden_item_id = oi.id), 0) AS precio_unitario
+             FROM orden_items oi WHERE oi.id = $1 AND oi.orden_id = $2`,
             [item.id, ordenId]
           );
           if (priceRes.rows.length > 0) {
@@ -449,12 +453,19 @@ export class OrdenModel {
               'guisado',  COALESCE(g.nombre, '[eliminado]'),
               'masa',     COALESCE(tm.nombre, '[eliminado]'),
               'cantidad', oi.cantidad,
-              'plato',    oi.plato
+              'plato',    oi.plato,
+              'extras',   COALESCE(ex.nombres, '[]'::json)
             ) ORDER BY oi.plato, oi.id
           ) AS gorditas
         FROM orden_items oi
         LEFT JOIN guisados   g  ON g.id  = oi.guisado_id
         LEFT JOIN tipos_masa tm ON tm.id = oi.tipo_masa_id
+        LEFT JOIN LATERAL (
+          SELECT json_agg(e.nombre ORDER BY e.id) AS nombres
+          FROM orden_item_extras oie
+          JOIN extras e ON e.id = oie.extra_id
+          WHERE oie.orden_item_id = oi.id
+        ) ex ON true
         GROUP BY oi.orden_id
       ),
       bebidas_agg AS (
