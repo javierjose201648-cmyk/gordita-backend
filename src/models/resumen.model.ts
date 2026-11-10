@@ -45,7 +45,213 @@ export interface ResumenDia {
   }[];
 }
 
+// ── Reportes por rango de fechas ──────────────────────────────
+
+export type MetodoPagoFiltro = 'todos' | 'efectivo' | 'tarjeta';
+export type Agrupacion = 'dia' | 'mes';
+
+export interface ReportePeriodo {
+  periodo: string;        // 'YYYY-MM-DD' (día) o 'YYYY-MM' (mes)
+  ordenes: number;
+  ventas: number;
+  gastos: number;
+  ganancia: number;
+}
+
+export interface Reporte {
+  desde: string;
+  hasta: string;
+  metodo_pago: MetodoPagoFiltro;
+  agrupacion: Agrupacion;
+  // Ventas
+  num_ordenes: number;
+  total_ventas: number;
+  ventas_efectivo: number;
+  ventas_tarjeta: number;
+  ticket_promedio: number;
+  // Gorditas
+  gorditas: GorditaResumen[];
+  total_gorditas: number;
+  total_gorditas_pesos: number;
+  // Refrescos
+  refrescos_vendidos: RefrescoVendidoResumen[];
+  total_refrescos: number;
+  total_refrescos_pesos: number;
+  // Gastos
+  gastos: any[];
+  total_gastos: number;
+  // Resultado
+  ganancia: number;
+  // Desglose
+  desglose: ReportePeriodo[];
+}
+
+/** Rangos mayores a este número de días se desglosan por mes en lugar de por día */
+const MAX_DIAS_DESGLOSE_DIARIO = 62;
+
 export class ResumenModel {
+  /**
+   * Reporte de ventas y gastos entre dos fechas (inclusive), en la zona horaria del negocio.
+   * Los timestamps se guardan en UTC (`timestamp without time zone`), así que el rango
+   * local [desde 00:00, hasta+1 00:00) se convierte a UTC una sola vez y se filtra con
+   * comparaciones directas sobre `creado_en` (aprovecha el índice idx_ordenes_fecha).
+   * El filtro de método de pago aplica a las ventas; los gastos no tienen método de pago.
+   */
+  static async getReporte(
+    desde: string,
+    hasta: string,
+    metodoPago: MetodoPagoFiltro,
+    tz: string,
+  ): Promise<Reporte> {
+    const rangoRes = await pool.query(
+      `SELECT
+         ((($1::date)::timestamp     AT TIME ZONE $3) AT TIME ZONE 'UTC')::text AS ini,
+         ((($2::date + 1)::timestamp AT TIME ZONE $3) AT TIME ZONE 'UTC')::text AS fin,
+         ($2::date - $1::date + 1)::int                                       AS dias`,
+      [desde, hasta, tz]
+    );
+    const { ini, fin, dias } = rangoRes.rows[0];
+    const agrupacion: Agrupacion = dias > MAX_DIAS_DESGLOSE_DIARIO ? 'mes' : 'dia';
+    const formatoPeriodo = agrupacion === 'mes' ? 'YYYY-MM' : 'YYYY-MM-DD';
+    const metodo = metodoPago === 'todos' ? null : metodoPago;
+
+    // $1 = ini UTC, $2 = fin UTC, $3 = método de pago (NULL = todos)
+    const filtroOrdenes = `
+      o.creado_en >= $1::timestamp AND o.creado_en < $2::timestamp
+      AND ($3::text IS NULL OR o.metodo_pago = $3::text)`;
+    const paramsOrdenes = [ini, fin, metodo];
+
+    const [gorditasRes, refrescosRes, ventasRes, gastosRes, ventasPeriodoRes, gastosPeriodoRes] =
+      await Promise.all([
+        pool.query(`
+          SELECT
+            COALESCE(tm.nombre, 'Sin tipo') AS masa_nombre,
+            SUM(oi.cantidad)::int           AS cantidad,
+            SUM(oi.subtotal)::numeric       AS subtotal
+          FROM orden_items oi
+          LEFT JOIN tipos_masa tm ON oi.tipo_masa_id = tm.id
+          JOIN ordenes o ON oi.orden_id = o.id
+          WHERE ${filtroOrdenes}
+          GROUP BY tm.nombre
+          ORDER BY tm.nombre ASC
+        `, paramsOrdenes),
+
+        pool.query(`
+          SELECT
+            r.nombre                   AS categoria_nombre,
+            SUM(ore.cantidad)::int     AS cantidad,
+            SUM(ore.subtotal)::numeric AS subtotal
+          FROM orden_refrescos ore
+          JOIN refrescos r ON ore.refresco_id = r.id
+          JOIN ordenes o ON ore.orden_id = o.id
+          WHERE ${filtroOrdenes}
+          GROUP BY r.nombre
+          ORDER BY r.nombre ASC
+        `, paramsOrdenes),
+
+        pool.query(`
+          SELECT
+            COUNT(*)::int                                                              AS num_ordenes,
+            COALESCE(SUM(o.total), 0)::numeric                                         AS total_ventas,
+            COALESCE(SUM(o.total) FILTER (WHERE o.metodo_pago = 'efectivo'), 0)::numeric AS ventas_efectivo,
+            COALESCE(SUM(o.total) FILTER (WHERE o.metodo_pago = 'tarjeta'),  0)::numeric AS ventas_tarjeta
+          FROM ordenes o
+          WHERE ${filtroOrdenes}
+        `, paramsOrdenes),
+
+        pool.query(`
+          SELECT g.id, g.concepto, g.monto, g.turno_id, g.usuario_id, g.creado_en,
+                 u.nombre_completo AS usuario_nombre,
+                 to_char((g.creado_en AT TIME ZONE 'UTC') AT TIME ZONE $3, 'YYYY-MM-DD') AS fecha
+          FROM gastos g
+          LEFT JOIN usuarios u ON u.id = g.usuario_id
+          WHERE g.creado_en >= $1::timestamp AND g.creado_en < $2::timestamp
+          ORDER BY g.creado_en ASC
+        `, [ini, fin, tz]),
+
+        pool.query(`
+          SELECT
+            to_char((o.creado_en AT TIME ZONE 'UTC') AT TIME ZONE $4, $5) AS periodo,
+            COUNT(*)::int                      AS ordenes,
+            COALESCE(SUM(o.total), 0)::numeric AS ventas
+          FROM ordenes o
+          WHERE ${filtroOrdenes}
+          GROUP BY 1
+        `, [...paramsOrdenes, tz, formatoPeriodo]),
+
+        pool.query(`
+          SELECT
+            to_char((g.creado_en AT TIME ZONE 'UTC') AT TIME ZONE $3, $4) AS periodo,
+            COALESCE(SUM(g.monto), 0)::numeric AS gastos
+          FROM gastos g
+          WHERE g.creado_en >= $1::timestamp AND g.creado_en < $2::timestamp
+          GROUP BY 1
+        `, [ini, fin, tz, formatoPeriodo]),
+      ]);
+
+    const gorditas: GorditaResumen[] = gorditasRes.rows.map(r => ({
+      masa_nombre: r.masa_nombre,
+      cantidad:    Number(r.cantidad),
+      subtotal:    parseFloat(r.subtotal),
+    }));
+    const refrescosVendidos: RefrescoVendidoResumen[] = refrescosRes.rows.map(r => ({
+      categoria_nombre: r.categoria_nombre,
+      cantidad:         Number(r.cantidad),
+      subtotal:         parseFloat(r.subtotal),
+    }));
+
+    const gastos = gastosRes.rows.map(g => ({ ...g, monto: parseFloat(g.monto) }));
+    const totalGastos = gastos.reduce((s: number, g: any) => s + g.monto, 0);
+
+    const v = ventasRes.rows[0];
+    const numOrdenes  = Number(v.num_ordenes);
+    const totalVentas = parseFloat(v.total_ventas);
+
+    // Unir ventas y gastos por periodo (un periodo puede tener solo uno de los dos)
+    const porPeriodo = new Map<string, ReportePeriodo>();
+    const fila = (p: string) => {
+      let f = porPeriodo.get(p);
+      if (!f) {
+        f = { periodo: p, ordenes: 0, ventas: 0, gastos: 0, ganancia: 0 };
+        porPeriodo.set(p, f);
+      }
+      return f;
+    };
+    for (const r of ventasPeriodoRes.rows) {
+      const f = fila(r.periodo);
+      f.ordenes = Number(r.ordenes);
+      f.ventas  = parseFloat(r.ventas);
+    }
+    for (const r of gastosPeriodoRes.rows) {
+      fila(r.periodo).gastos = parseFloat(r.gastos);
+    }
+    const desglose = [...porPeriodo.values()]
+      .map(f => ({ ...f, ganancia: f.ventas - f.gastos }))
+      .sort((a, b) => a.periodo.localeCompare(b.periodo));
+
+    return {
+      desde,
+      hasta,
+      metodo_pago: metodoPago,
+      agrupacion,
+      num_ordenes:     numOrdenes,
+      total_ventas:    totalVentas,
+      ventas_efectivo: parseFloat(v.ventas_efectivo),
+      ventas_tarjeta:  parseFloat(v.ventas_tarjeta),
+      ticket_promedio: numOrdenes > 0 ? totalVentas / numOrdenes : 0,
+      gorditas,
+      total_gorditas:       gorditas.reduce((s, g) => s + g.cantidad, 0),
+      total_gorditas_pesos: gorditas.reduce((s, g) => s + g.subtotal, 0),
+      refrescos_vendidos:    refrescosVendidos,
+      total_refrescos:       refrescosVendidos.reduce((s, r) => s + r.cantidad, 0),
+      total_refrescos_pesos: refrescosVendidos.reduce((s, r) => s + r.subtotal, 0),
+      gastos,
+      total_gastos: totalGastos,
+      ganancia:     totalVentas - totalGastos,
+      desglose,
+    };
+  }
+
   /**
    * Devuelve el resumen del turno activo.
    * Filtra todas las consultas por `inicio` del turno, no por fecha del día.

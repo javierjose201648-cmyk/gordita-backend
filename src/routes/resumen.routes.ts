@@ -6,6 +6,7 @@ const router = Router();
 
 // Admin only
 router.get('/hoy',    authenticate, authorize('administrador'), ResumenController.getHoy);
+router.get('/reporte', authenticate, authorize('administrador'), ResumenController.getReporte);
 router.post('/cerrar', authenticate, authorize('administrador'), ResumenController.cerrarTurno);
 
 export default router;
